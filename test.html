@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Simple To‑Do List</title>
+    <style>
+        :root {
+            --bg: #f6f8fa;
+            --card: #ffffff;
+            --accent: #0366d6;
+            --muted: #6a737d;
+            --danger: #d73a49;
+        }
+        html,body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; background:var(--bg); color:#111;}
+        .wrap {
+            max-width:600px; margin:48px auto; padding:20px;
+            background:linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.95));
+            border-radius:12px; box-shadow:0 6px 20px rgba(2,6,23,0.08);
+        }
+        h1 { margin:0 0 12px; font-size:20px; display:flex; align-items:center; gap:10px; }
+        .new {
+            display:flex; gap:8px; margin-bottom:14px;
+        }
+        .new input[type="text"] {
+            flex:1; padding:10px 12px; border:1px solid #e1e4e8; border-radius:8px; font-size:15px;
+        }
+        .new button {
+            padding:10px 14px; background:var(--accent); color:#fff; border:none; border-radius:8px; cursor:pointer;
+        }
+        .list { list-style:none; padding:0; margin:0; }
+        .item {
+            display:flex; align-items:center; gap:12px; padding:10px; border-radius:8px; margin-bottom:8px;
+            background:var(--card); border:1px solid #eef2f5;
+        }
+        .item.completed .text { text-decoration:line-through; color:var(--muted); }
+        .text { flex:1; word-break:break-word; font-size:15px; }
+        .actions { display:flex; gap:8px; align-items:center; }
+        .icon-btn {
+            background:transparent; border:1px solid transparent; padding:6px; border-radius:6px; cursor:pointer;
+        }
+        .icon-btn.delete { color:var(--danger); border-color:rgba(215,58,73,0.08); }
+        .meta { margin-top:12px; color:var(--muted); font-size:13px; display:flex; justify-content:space-between; align-items:center; }
+        .clear-btn { background:transparent; border:1px solid #e1e4e8; padding:6px 10px; border-radius:8px; cursor:pointer; }
+        small { color:var(--muted); }
+        @media (max-width:420px){ .wrap{ margin:20px; } .new input{ font-size:14px; } }
+    </style>
+</head>
+<body>
+    <main class="wrap" id="app">
+        <h1>To‑Do List</h1>
+
+        <div class="new" aria-label="Add new todo">
+            <input id="todoInput" type="text" placeholder="What needs doing?" aria-label="New todo" />
+            <button id="addBtn" aria-label="Add todo">Add</button>
+        </div>
+
+        <ul id="todoList" class="list" aria-live="polite"></ul>
+
+        <div class="meta">
+            <div><small id="count">0 items</small></div>
+            <div>
+                <button id="clearCompleted" class="clear-btn">Clear completed</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function(){
+            const STORAGE_KEY = 'simple_todos_v1';
+            const input = document.getElementById('todoInput');
+            const addBtn = document.getElementById('addBtn');
+            const listEl = document.getElementById('todoList');
+            const countEl = document.getElementById('count');
+            const clearBtn = document.getElementById('clearCompleted');
+
+            let todos = load();
+
+            function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(todos)); }
+            function load(){
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    return raw ? JSON.parse(raw) : [];
+                } catch(e){ return []; }
+            }
+
+            function render(){
+                listEl.innerHTML = '';
+                todos.forEach(todo => {
+                    const li = document.createElement('li');
+                    li.className = 'item' + (todo.completed ? ' completed' : '');
+                    li.dataset.id = todo.id;
+
+                    li.innerHTML = `
+                        <input type="checkbox" class="toggle" ${todo.completed ? 'checked' : ''} aria-label="Mark todo complete" />
+                        <div class="text" contenteditable="false" tabindex="0" role="textbox" aria-label="Todo text">${escapeHtml(todo.text)}</div>
+                        <div class="actions">
+                            <button class="icon-btn edit" title="Edit">✏️</button>
+                            <button class="icon-btn delete" title="Delete">🗑️</button>
+                        </div>
+                    `;
+                    listEl.appendChild(li);
+                });
+                updateCount();
+            }
+
+            function updateCount(){
+                const remaining = todos.filter(t=>!t.completed).length;
+                const total = todos.length;
+                countEl.textContent = total ? `${remaining} of ${total} remaining` : 'No items';
+            }
+
+            function addTodo(text){
+                text = text.trim();
+                if(!text) return;
+                todos.push({ id: Date.now().toString(36), text, completed:false });
+                save(); render();
+            }
+
+            function toggleTodo(id){
+                const t = todos.find(x=>x.id===id);
+                if(!t) return;
+                t.completed = !t.completed;
+                save(); render();
+            }
+
+            function removeTodo(id){
+                todos = todos.filter(x=>x.id!==id);
+                save(); render();
+            }
+
+            function editTodo(id, newText){
+                const t = todos.find(x=>x.id===id);
+                if(!t) return;
+                t.text = newText.trim() || t.text;
+                save(); render();
+            }
+
+            // Events
+            addBtn.addEventListener('click', ()=>{ addTodo(input.value); input.value=''; input.focus(); });
+            input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ addTodo(input.value); input.value=''; } });
+
+            listEl.addEventListener('click', (e)=>{
+                const li = e.target.closest('.item');
+                if(!li) return;
+                const id = li.dataset.id;
+                if(e.target.matches('.toggle')) { toggleTodo(id); return; }
+                if(e.target.matches('.delete')) { removeTodo(id); return; }
+                if(e.target.matches('.edit')) {
+                    const textEl = li.querySelector('.text');
+                    textEl.contentEditable = 'true';
+                    textEl.focus();
+                    // place caret at end
+                    const range = document.createRange();
+                    range.selectNodeContents(textEl);
+                    range.collapse(false);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            });
+
+            // Save edits on blur or Enter
+            listEl.addEventListener('keydown', (e)=>{
+                if(e.target.classList.contains('text') && e.key === 'Enter'){
+                    e.preventDefault();
+                    e.target.blur();
+                }
+            });
+            listEl.addEventListener('blur', (e)=>{
+                if(e.target.classList && e.target.classList.contains('text') && e.target.isContentEditable){
+                    const id = e.target.closest('.item').dataset.id;
+                    e.target.contentEditable = 'false';
+                    editTodo(id, e.target.textContent);
+                }
+            }, true);
+
+            clearBtn.addEventListener('click', ()=>{
+                todos = todos.filter(t=>!t.completed);
+                save(); render();
+            });
+
+            // small helper
+            function escapeHtml(str){
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            render();
+        })();
+    </script>
+</body>
+</html>
